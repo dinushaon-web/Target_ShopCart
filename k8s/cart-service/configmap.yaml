@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cart-config
+  namespace: shopcart
+data:
+  AWS_REGION: "us-east-1"
+  DYNAMODB_CARTS_TABLE: "carts"
+  SECRETS_MANAGER_SECRET_NAME: "shopcart/cart/prod"
+  PRODUCT_CATALOG_SERVICE_URL: "http://product-catalog-service:3000"
+  API_VERSION: "v1"
+  API_BASE_PATH: "/api/v1"
+  CART_TTL_SECONDS: "2592000"
+  CIRCUIT_BREAKER_TIMEOUT: "3000"
+  CIRCUIT_BREAKER_ERROR_THRESHOLD: "50"
+  CIRCUIT_BREAKER_RESET_TIMEOUT: "30000"
+  LOG_LEVEL: "info"

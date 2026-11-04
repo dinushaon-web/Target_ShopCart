@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: product-catalog-config
+  namespace: shopcart
+data:
+  AWS_REGION: "us-east-1"
+  DYNAMODB_PRODUCTS_TABLE: "products"
+  SECRETS_MANAGER_SECRET_NAME: "shopcart/product-catalog/prod"
+  API_VERSION: "v1"
+  API_BASE_PATH: "/api/v1"
+  DEFAULT_PAGE_SIZE: "20"
+  MAX_PAGE_SIZE: "100"
+  LOG_LEVEL: "info"

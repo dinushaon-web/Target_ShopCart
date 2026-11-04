@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-catalog-service
+  namespace: shopcart
+  labels:
+    app: product-catalog-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: product-catalog-service
+  template:
+    metadata:
+      labels:
+        app: product-catalog-service
+        version: v1
+    spec:
+      serviceAccountName: product-catalog-sa
+      containers:
+      - name: product-catalog
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/product-catalog-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: product-catalog-config
+              key: AWS_REGION
+        - name: DYNAMODB_PRODUCTS_TABLE
+          valueFrom:
+            configMapKeyRef:
+              name: product-catalog-config
+              key: DYNAMODB_PRODUCTS_TABLE
+        - name: SECRETS_MANAGER_SECRET_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: product-catalog-config
+              key: SECRETS_MANAGER_SECRET_NAME
+        - name: LOG_LEVEL
+          value: "info"
+        - name: ENABLE_XRAY
+          value: "true"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
