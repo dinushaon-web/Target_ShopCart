@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cart-service-config
+  namespace: shopcart
+data:
+  aws-region: "us-east-1"
+  carts-table-name: "carts"
+  products-table-name: "products"
+  cognito-user-pool-id: "<COGNITO_USER_POOL_ID>"
