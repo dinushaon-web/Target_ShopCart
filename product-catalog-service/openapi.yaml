@@ -4,6 +4,7 @@ info:
   description: |
     Product Catalog microservice for ShopCart platform.
     Manages product inventory, catalog operations, and stock management.
+    Supports pagination, filtering, and sorting.
   version: 1.0.0
   contact:
     name: ShopCart Team
@@ -28,45 +29,119 @@ paths:
     get:
       tags:
         - Products
-      summary: List all products
-      description: Retrieve a paginated list of all products
+      summary: List all products with pagination, filtering, and sorting
+      description: |
+        Retrieve a paginated list of products with support for:
+        - Cursor-based pagination (nextToken)
+        - Filtering by category, price range, and stock availability
+        - Sorting by price, name, or popularity
       operationId: getAllProducts
       parameters:
         - name: limit
           in: query
-          description: Maximum number of products to return
+          description: Maximum number of products to return (default 20, max 100)
           required: false
           schema:
             type: integer
-            default: 50
+            default: 20
             minimum: 1
             maximum: 100
-        - name: cursor
+        - name: nextToken
           in: query
-          description: Base64-encoded pagination cursor
+          description: Base64-encoded pagination cursor from previous response
           required: false
           schema:
             type: string
+            format: base64
+        - name: category
+          in: query
+          description: Filter by category (exact match, case-sensitive)
+          required: false
+          schema:
+            type: string
+          example: electronics
+        - name: minPrice
+          in: query
+          description: Minimum price filter (price >= minPrice)
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0
+          example: 10.0
+        - name: maxPrice
+          in: query
+          description: Maximum price filter (price <= maxPrice)
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0
+          example: 1000.0
+        - name: inStock
+          in: query
+          description: Filter by stock availability (true = in stock only)
+          required: false
+          schema:
+            type: boolean
+          example: true
+        - name: sortBy
+          in: query
+          description: Field to sort by (uses DynamoDB GSIs for efficient sorting)
+          required: false
+          schema:
+            type: string
+            enum: [price, name, popularity]
+          example: price
+        - name: sortOrder
+          in: query
+          description: Sort direction (ascending or descending)
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+          example: asc
       responses:
         '200':
-          description: Successful response
+          description: Successful response with paginated products
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Product'
-                  pagination:
-                    type: object
-                    properties:
-                      limit:
-                        type: integer
-                      cursor:
-                        type: string
-                        nullable: true
+                $ref: '#/components/schemas/GetAllProductsResponse'
+              examples:
+                success:
+                  summary: Successful response with products
+                  value:
+                    products:
+                      - productId: 550e8400-e29b-41d4-a716-446655440000
+                        name: Wireless Headphones
+                        description: High-quality wireless headphones with active noise cancellation
+                        price: 99.99
+                        currency: USD
+                        category: electronics
+                        imageUrl: https://cdn.shopcart.com/products/headphones-001.jpg
+                        inStock: true
+                        stockQuantity: 50
+                        popularity: 100
+                        createdAt: 2024-01-20T00:00:00Z
+                        updatedAt: 2024-01-20T00:00:00Z
+                    pagination:
+                      limit: 20
+                      nextToken: eyJwcm9kdWN0SWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAifQ==
+                      hasMore: true
+                emptyResult:
+                  summary: No products found
+                  value:
+                    products: []
+                    pagination:
+                      limit: 20
+                      nextToken: null
+                      hasMore: false
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -101,33 +176,71 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /products/{productId}:
+  /products/{id}:
     get:
       tags:
         - Products
       summary: Get product by ID
-      description: Retrieve a single product by its ID
+      description: Retrieve a single product by its UUID
       operationId: getProductById
       parameters:
-        - name: productId
+        - name: id
           in: path
           required: true
-          description: Product UUID
+          description: Product UUID (must be valid UUID v4 format)
           schema:
             type: string
             format: uuid
+            pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          example: 550e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
           description: Successful response
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Product'
+                $ref: '#/components/schemas/Product'
+              example:
+                productId: 550e8400-e29b-41d4-a716-446655440000
+                name: Wireless Headphones
+                description: High-quality wireless headphones with active noise cancellation
+                price: 99.99
+                currency: USD
+                category: electronics
+                imageUrl: https://cdn.shopcart.com/products/headphones-001.jpg
+                inStock: true
+                stockQuantity: 50
+                popularity: 100
+                createdAt: 2024-01-20T00:00:00Z
+                updatedAt: 2024-01-20T00:00:00Z
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://api.shopcart.com/problems/validation-error
+                title: Validation Error
+                status: 400
+                detail: Invalid product ID format. Must be a valid UUID
+                instance: /api/v1/products/invalid-id
+                timestamp: 2024-01-20T12:00:00Z
+                requestId: req-123456
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Product not found (RFC 7807 format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://api.shopcart.com/problems/product-not-found
+                title: Product Not Found
+                status: 404
+                detail: Product with ID 550e8400-e29b-41d4-a716-446655440000 does not exist
+                instance: /api/v1/products/550e8400-e29b-41d4-a716-446655440000
+                timestamp: 2024-01-20T12:00:00Z
+                requestId: req-123456
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -140,7 +253,7 @@ paths:
       security:
         - CognitoAuth: []
       parameters:
-        - name: productId
+        - name: id
           in: path
           required: true
           description: Product UUID
@@ -181,7 +294,7 @@ paths:
       security:
         - CognitoAuth: []
       parameters:
-        - name: productId
+        - name: id
           in: path
           required: true
           description: Product UUID
@@ -206,6 +319,7 @@ paths:
       description: |
         Atomically decrement product stock (internal/service-to-service).
         Replaces sp_decrement_stock stored procedure.
+        Note: AC8 states this should be handled by Inventory Service.
       operationId: decrementStock
       security:
         - CognitoAuth: []
@@ -291,12 +405,17 @@ components:
   schemas:
     Product:
       type: object
+      description: Product entity with all required fields
       required:
         - productId
         - name
         - description
         - price
-        - stock
+        - currency
+        - category
+        - imageUrl
+        - inStock
+        - stockQuantity
         - createdAt
         - updatedAt
       properties:
@@ -308,35 +427,101 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          description: Product name
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
+          description: Detailed product description
         price:
           type: number
-          format: double
+          format: float
           minimum: 0.01
           description: Product price (must be > 0)
-        stock:
-          type: integer
-          minimum: 0
-          description: Available stock quantity
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code (e.g., USD)
+          example: USD
         category:
           type: string
+          minLength: 1
+          maxLength: 100
+          description: Product category (required for GSI queries)
+        imageUrl:
+          type: string
+          format: uri
+          description: Fully qualified HTTPS URL to product image
+          example: https://cdn.shopcart.com/products/headphones-001.jpg
+        inStock:
+          type: boolean
+          description: Stock availability (derived from stockQuantity > 0)
+        stockQuantity:
+          type: integer
+          minimum: 0
+          description: Current stock quantity (renamed from 'stock')
+        popularity:
+          type: integer
+          minimum: 0
           nullable: true
+          description: Product popularity score for sorting (optional)
         createdAt:
           type: string
           format: date-time
+          description: Product creation timestamp (ISO 8601)
         updatedAt:
           type: string
           format: date-time
+          description: Product last update timestamp (ISO 8601)
+
+    GetAllProductsResponse:
+      type: object
+      description: Response for getAllProducts endpoint with pagination
+      required:
+        - products
+        - pagination
+      properties:
+        products:
+          type: array
+          description: Array of product objects matching query criteria
+          items:
+            $ref: '#/components/schemas/Product'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    PaginationMetadata:
+      type: object
+      description: Pagination metadata for cursor-based pagination
+      required:
+        - limit
+        - nextToken
+        - hasMore
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Number of items returned in current page
+        nextToken:
+          type: string
+          format: base64
+          nullable: true
+          description: Base64-encoded cursor for next page (null if no more results)
+        hasMore:
+          type: boolean
+          description: Indicates whether more results are available
 
     ProductInput:
       type: object
+      description: Input schema for creating a new product
       required:
         - name
         - description
         - price
-        - stock
+        - currency
+        - category
+        - imageUrl
+        - stockQuantity
       properties:
         name:
           type: string
@@ -344,20 +529,34 @@ components:
           maxLength: 255
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
         price:
           type: number
-          format: double
+          format: float
           minimum: 0.01
-        stock:
-          type: integer
-          minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
         category:
           type: string
+          minLength: 1
+          maxLength: 100
+        imageUrl:
+          type: string
+          format: uri
+        stockQuantity:
+          type: integer
+          minimum: 0
+        popularity:
+          type: integer
+          minimum: 0
           nullable: true
 
     ProductUpdate:
       type: object
+      description: Input schema for updating a product
       properties:
         name:
           type: string
@@ -365,17 +564,28 @@ components:
           maxLength: 255
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
         price:
           type: number
-          format: double
+          format: float
           minimum: 0.01
-        stock:
-          type: integer
-          minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
         category:
           type: string
-          nullable: true
+          minLength: 1
+          maxLength: 100
+        imageUrl:
+          type: string
+          format: uri
+        stockQuantity:
+          type: integer
+          minimum: 0
+        popularity:
+          type: integer
+          minimum: 0
 
     ProblemDetails:
       type: object
@@ -404,6 +614,13 @@ components:
           type: string
           format: uri
           description: URI reference identifying the specific occurrence
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp when error occurred
+        requestId:
+          type: string
+          description: Unique request identifier for tracing
 
   responses:
     ValidationError:
@@ -412,12 +629,27 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
-          example:
-            type: https://api.shopcart.com/problems/validation-error
-            title: Validation Error
-            status: 400
-            detail: Price must be greater than 0
-            instance: /api/v1/products
+          examples:
+            invalidLimit:
+              summary: Limit exceeds maximum
+              value:
+                type: https://api.shopcart.com/problems/validation-error
+                title: Validation Error
+                status: 400
+                detail: Limit cannot exceed 100
+                instance: /api/v1/products
+                timestamp: 2024-01-20T12:00:00Z
+                requestId: req-123456
+            invalidPriceRange:
+              summary: Invalid price range
+              value:
+                type: https://api.shopcart.com/problems/validation-error
+                title: Validation Error
+                status: 400
+                detail: minPrice cannot be greater than maxPrice
+                instance: /api/v1/products
+                timestamp: 2024-01-20T12:00:00Z
+                requestId: req-123457
 
     Unauthorized:
       description: Unauthorized
@@ -431,19 +663,23 @@ components:
             status: 401
             detail: Authentication required
             instance: /api/v1/products
+            timestamp: 2024-01-20T12:00:00Z
+            requestId: req-123456
 
     NotFound:
-      description: Resource not found
+      description: Resource not found (RFC 7807 format)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: https://api.shopcart.com/problems/not-found
-            title: Resource Not Found
+            type: https://api.shopcart.com/problems/product-not-found
+            title: Product Not Found
             status: 404
-            detail: Product with ID 123 does not exist
-            instance: /api/v1/products/123
+            detail: Product with ID 550e8400-e29b-41d4-a716-446655440000 does not exist
+            instance: /api/v1/products/550e8400-e29b-41d4-a716-446655440000
+            timestamp: 2024-01-20T12:00:00Z
+            requestId: req-123456
 
     InsufficientStock:
       description: Insufficient stock
@@ -455,8 +691,10 @@ components:
             type: https://api.shopcart.com/problems/insufficient-stock
             title: Insufficient Stock
             status: 409
-            detail: Insufficient stock for product 123
-            instance: /api/v1/products/123/decrement-stock
+            detail: Insufficient stock for product 550e8400-e29b-41d4-a716-446655440000
+            instance: /api/v1/products/550e8400-e29b-41d4-a716-446655440000/decrement-stock
+            timestamp: 2024-01-20T12:00:00Z
+            requestId: req-123456
 
     InternalServerError:
       description: Internal server error
@@ -470,3 +708,5 @@ components:
             status: 500
             detail: An unexpected error occurred
             instance: /api/v1/products
+            timestamp: 2024-01-20T12:00:00Z
+            requestId: req-123456

@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { ProblemDetailsFactory, ProblemDetails } from '../models/problem-details.model';
-import { ValidationError, InsufficientStockError } from '../models/product.model';
+import { ValidationError, InsufficientStockError, NotFoundError } from '../models/product.model';
 import { logger } from '../utils/logger.util';
 
+/**
+ * Error handling middleware
+ * Converts errors to RFC 7807 Problem Details format
+ * Implements AC10 (RFC 7807 for 404 errors)
+ */
 export function errorMiddleware(
   error: Error,
   req: Request,
@@ -20,6 +25,17 @@ export function errorMiddleware(
 
   if (error instanceof ValidationError) {
     problem = ProblemDetailsFactory.validationError(error.message, req.path);
+  } else if (error instanceof NotFoundError) {
+    // AC10: RFC 7807 Problem Details for 404 errors
+    problem = {
+      type: 'https://api.shopcart.com/problems/product-not-found',
+      title: 'Product Not Found',
+      status: 404,
+      detail: error.message,
+      instance: req.path,
+      timestamp: new Date().toISOString(),
+      requestId: req.headers['x-request-id'] as string || 'unknown'
+    };
   } else if (error instanceof InsufficientStockError) {
     problem = ProblemDetailsFactory.insufficientStock(
       req.params.productId || 'unknown',

@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { ProductService } from '../services/product.service';
+import { GetAllProductsParams } from '../repositories/product.repository';
 import { ProblemDetailsFactory } from '../models/problem-details.model';
 import { logger } from '../utils/logger.util';
+import { NotFoundError } from '../models/product.model';
 
 export class ProductController {
   private productService: ProductService;
@@ -12,50 +14,44 @@ export class ProductController {
 
   /**
    * GET /api/v1/products
-   * List all products with pagination
+   * List all products with pagination, filtering, and sorting
+   * Implements AC1, AC2, AC3, AC9
    */
   async getAllProducts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
-      const cursor = req.query.cursor as string;
+      const params: GetAllProductsParams = {
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+        nextToken: req.query.nextToken as string | undefined,
+        category: req.query.category as string | undefined,
+        minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
+        maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined,
+        inStock: req.query.inStock ? req.query.inStock === 'true' : undefined,
+        sortBy: req.query.sortBy as 'price' | 'name' | 'popularity' | undefined,
+        sortOrder: req.query.sortOrder as 'asc' | 'desc' | undefined,
+      };
 
-      const lastEvaluatedKey = cursor ? JSON.parse(Buffer.from(cursor, 'base64').toString()) : undefined;
+      const result = await this.productService.getAllProducts(params);
 
-      const result = await this.productService.getAllProducts(limit, lastEvaluatedKey);
-
-      const nextCursor = result.lastEvaluatedKey
-        ? Buffer.from(JSON.stringify(result.lastEvaluatedKey)).toString('base64')
-        : undefined;
-
-      res.status(200).json({
-        data: result.items,
-        pagination: {
-          limit,
-          cursor: nextCursor
-        }
-      });
+      // OpenAPI 3.0 compliant response
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * GET /api/v1/products/:productId
+   * GET /api/v1/products/:id
    * Get a single product by ID
+   * Implements AC4, AC10 (RFC 7807 error for 404)
    */
   async getProductById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { productId } = req.params;
+      const productId = req.params.id;
       const product = await this.productService.getProductById(productId);
 
-      if (!product) {
-        const problem = ProblemDetailsFactory.notFound('Product', productId, req.path);
-        res.status(404).json(problem);
-        return;
-      }
-
-      res.status(200).json({ data: product });
+      res.status(200).json(product);
     } catch (error) {
+      // NotFoundError will be handled by error middleware with RFC 7807 format
       next(error);
     }
   }
