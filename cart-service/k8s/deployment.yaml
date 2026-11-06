@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-service
+  namespace: shopcart
+  labels:
+    app: cart-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cart-service
+  template:
+    metadata:
+      labels:
+        app: cart-service
+        version: v1
+    spec:
+      serviceAccountName: cart-service-sa
+      containers:
+      - name: cart-service
+        image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/cart-service:latest
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3001"
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: cart-service-config
+              key: aws-region
+        - name: CARTS_TABLE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: cart-service-config
+              key: carts-table-name
+        - name: PRODUCTS_TABLE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: cart-service-config
+              key: products-table-name
+        - name: COGNITO_USER_POOL_ID
+          valueFrom:
+            configMapKeyRef:
+              name: cart-service-config
+              key: cognito-user-pool-id
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
