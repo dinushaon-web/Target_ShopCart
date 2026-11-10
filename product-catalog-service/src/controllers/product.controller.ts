@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ProductService } from '../services/product.service';
 import { ProblemDetailsFactory } from '../models/problem-details.model';
 import { logger } from '../utils/logger.util';
+import { ProductListQueryParams } from '../models/product.model';
 
 export class ProductController {
   private productService: ProductService;
@@ -12,28 +13,28 @@ export class ProductController {
 
   /**
    * GET /api/v1/products
-   * List all products with pagination
+   * List all products with advanced filtering, sorting, and pagination
+   * NEW: Supports query parameters and returns new response format
    */
   async getAllProducts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
-      const cursor = req.query.cursor as string;
+      // Extract query parameters from request
+      const queryParams: ProductListQueryParams = {
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+        nextToken: req.query.nextToken as string,
+        category: req.query.category as string,
+        minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
+        maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined,
+        inStock: req.query.inStock ? req.query.inStock === 'true' : undefined,
+        sortBy: req.query.sortBy as string,
+        order: req.query.order as 'asc' | 'desc'
+      };
 
-      const lastEvaluatedKey = cursor ? JSON.parse(Buffer.from(cursor, 'base64').toString()) : undefined;
+      // Call service with query parameters
+      const result = await this.productService.getAllProducts(queryParams);
 
-      const result = await this.productService.getAllProducts(limit, lastEvaluatedKey);
-
-      const nextCursor = result.lastEvaluatedKey
-        ? Buffer.from(JSON.stringify(result.lastEvaluatedKey)).toString('base64')
-        : undefined;
-
-      res.status(200).json({
-        data: result.items,
-        pagination: {
-          limit,
-          cursor: nextCursor
-        }
-      });
+      // Return response in NEW format (products, not data)
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
@@ -54,6 +55,7 @@ export class ProductController {
         return;
       }
 
+      // Return single product (keep legacy format for backward compatibility)
       res.status(200).json({ data: product });
     } catch (error) {
       next(error);
@@ -62,7 +64,8 @@ export class ProductController {
 
   /**
    * GET /api/v1/products/category/:category
-   * Get products by category
+   * Get products by category (DEPRECATED - use query parameter instead)
+   * Kept for backward compatibility during migration
    */
   async getProductsByCategory(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
