@@ -1,20 +1,28 @@
 openapi: 3.0.3
 info:
-  title: Product Catalog Service API
+  title: Product Catalog API
   description: |
     Product Catalog microservice for ShopCart platform.
     Manages product inventory, catalog operations, and stock management.
+    
+    **Version 1.0.0** - Enhanced with advanced filtering, sorting, and pagination.
   version: 1.0.0
   contact:
-    name: ShopCart Team
-    email: api@shopcart.com
+    name: API Support
+    email: api-support@shopcart.com
+    url: https://api.shopcart.com/support
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
-  - url: https://api.shopcart.com/api/v1
-    description: Production
-  - url: https://staging-api.shopcart.com/api/v1
-    description: Staging
-  - url: http://localhost:3000/api/v1
+  - url: https://api.shopcart.com
+    description: Production server
+  - url: https://api-staging.shopcart.com
+    description: Staging server
+  - url: https://api-dev.shopcart.com
+    description: Development server
+  - url: http://localhost:3000
     description: Local Development
 
 tags:
@@ -24,51 +32,145 @@ tags:
     description: Health check endpoints
 
 paths:
-  /products:
+  /api/v1/products:
     get:
       tags:
         - Products
-      summary: List all products
-      description: Retrieve a paginated list of all products
-      operationId: getAllProducts
+      summary: List all products with filtering and sorting
+      description: |
+        Retrieve a paginated list of products with support for filtering by category, 
+        price range, and stock status. Supports cursor-based pagination and multiple 
+        sorting options.
+      operationId: listProducts
       parameters:
         - name: limit
           in: query
-          description: Maximum number of products to return
+          description: Maximum number of products to return per page
           required: false
           schema:
             type: integer
-            default: 50
             minimum: 1
             maximum: 100
-        - name: cursor
+            default: 20
+          example: 20
+        - name: nextToken
           in: query
-          description: Base64-encoded pagination cursor
+          description: Base64-encoded cursor token for pagination. Obtained from the previous response's pagination object.
           required: false
           schema:
             type: string
+            format: base64
+          example: "eyJwcm9kdWN0SWQiOiIxMjM0NTY3OC05MGFiLWNkZWYtMTIzNC01Njc4OTBhYmNkZWYifQ=="
+        - name: category
+          in: query
+          description: Filter products by category
+          required: false
+          schema:
+            type: string
+            enum:
+              - Electronics
+              - Clothing
+              - Home & Garden
+              - Sports & Outdoors
+              - Books & Media
+              - General
+          example: Electronics
+        - name: minPrice
+          in: query
+          description: Minimum price filter (inclusive)
+          required: false
+          schema:
+            type: number
+            format: double
+            minimum: 0
+          example: 10.00
+        - name: maxPrice
+          in: query
+          description: Maximum price filter (inclusive)
+          required: false
+          schema:
+            type: number
+            format: double
+            minimum: 0
+          example: 500.00
+        - name: inStock
+          in: query
+          description: Filter products by stock availability. True returns only in-stock products.
+          required: false
+          schema:
+            type: boolean
+          example: true
+        - name: sortBy
+          in: query
+          description: Field to sort results by
+          required: false
+          schema:
+            type: string
+            enum: [name, price, createdAt]
+            default: createdAt
+          example: price
+        - name: order
+          in: query
+          description: Sort order direction
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          example: asc
       responses:
         '200':
-          description: Successful response
+          description: Successfully retrieved product list
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Product'
-                  pagination:
-                    type: object
-                    properties:
-                      limit:
-                        type: integer
-                      cursor:
-                        type: string
-                        nullable: true
+                $ref: '#/components/schemas/ProductListResponse'
+              examples:
+                successWithProducts:
+                  summary: Successful response with products
+                  value:
+                    products:
+                      - productId: "12345678-90ab-cdef-1234-567890abcdef"
+                        name: "Wireless Bluetooth Headphones"
+                        description: "High-quality wireless headphones with noise cancellation"
+                        price: 149.99
+                        currency: "USD"
+                        category: "Electronics"
+                        imageUrl: "https://cdn.shopcart.com/products/headphones-001.jpg"
+                        inStock: true
+                        stockQuantity: 45
+                        createdAt: "2024-01-15T10:30:00Z"
+                        updatedAt: "2024-01-18T14:22:00Z"
+                      - productId: "98765432-10ab-cdef-5678-901234abcdef"
+                        name: "Smart Watch Series 5"
+                        description: "Fitness tracking smartwatch with heart rate monitor"
+                        price: 299.99
+                        currency: "USD"
+                        category: "Electronics"
+                        imageUrl: "https://cdn.shopcart.com/products/watch-005.jpg"
+                        inStock: true
+                        stockQuantity: 23
+                        createdAt: "2024-01-14T09:15:00Z"
+                        updatedAt: "2024-01-17T11:45:00Z"
+                    pagination:
+                      limit: 20
+                      nextToken: "eyJwcm9kdWN0SWQiOiI5ODc2NTQzMi0xMGFiLWNkZWYtNTY3OC05MDEyMzRhYmNkZWYifQ=="
+                      hasMore: true
+                emptyResults:
+                  summary: No products found
+                  value:
+                    products: []
+                    pagination:
+                      limit: 20
+                      hasMore: false
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
     post:
       tags:
@@ -101,24 +203,25 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /products/{productId}:
+  /api/v1/products/{productId}:
     get:
       tags:
         - Products
-      summary: Get product by ID
-      description: Retrieve a single product by its ID
+      summary: Get a single product by ID
+      description: Retrieve detailed information about a specific product using its unique identifier (UUID).
       operationId: getProductById
       parameters:
         - name: productId
           in: path
+          description: Unique identifier of the product (UUID format)
           required: true
-          description: Product UUID
           schema:
             type: string
             format: uuid
+          example: "12345678-90ab-cdef-1234-567890abcdef"
       responses:
         '200':
-          description: Successful response
+          description: Successfully retrieved product details
           content:
             application/json:
               schema:
@@ -126,8 +229,25 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Product'
+              example:
+                data:
+                  productId: "12345678-90ab-cdef-1234-567890abcdef"
+                  name: "Wireless Bluetooth Headphones"
+                  description: "Premium wireless headphones with active noise cancellation, 30-hour battery life, and superior sound quality. Perfect for music lovers and professionals."
+                  price: 149.99
+                  currency: "USD"
+                  category: "Electronics"
+                  imageUrl: "https://cdn.shopcart.com/products/headphones-001.jpg"
+                  inStock: true
+                  stockQuantity: 45
+                  createdAt: "2024-01-15T10:30:00Z"
+                  updatedAt: "2024-01-18T14:22:00Z"
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -198,7 +318,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /products/{productId}/decrement-stock:
+  /api/v1/products/{productId}/decrement-stock:
     post:
       tags:
         - Products
@@ -255,12 +375,65 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/products/{productId}/increment-stock:
+    post:
+      tags:
+        - Products
+      summary: Increment product stock
+      description: Increment product stock (for returns or restocking)
+      operationId: incrementStock
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: Product UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - quantity
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+                  description: Quantity to increment
+      responses:
+        '200':
+          description: Stock incremented successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  productId:
+                    type: string
+                  quantity:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /health:
     get:
       tags:
         - Health
-      summary: Health check
-      description: Check service health status
+      summary: Health check endpoint
+      description: Check if the service is running and responsive. Used by load balancers and monitoring systems.
       operationId: healthCheck
       responses:
         '200':
@@ -272,13 +445,70 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: healthy
-                  service:
-                    type: string
-                    example: product-catalog
+                    enum: [healthy]
                   timestamp:
                     type: string
                     format: date-time
+              example:
+                status: healthy
+                timestamp: "2024-01-20T12:00:00Z"
+
+  /ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness check endpoint
+      description: Check if the service is ready to accept traffic. Verifies database connectivity and other dependencies.
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Service is ready to accept traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [connected, disconnected]
+                  timestamp:
+                    type: string
+                    format: date-time
+              example:
+                status: ready
+                dependencies:
+                  database: connected
+                timestamp: "2024-01-20T12:00:00Z"
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [not-ready]
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [connected, disconnected]
+                  timestamp:
+                    type: string
+                    format: date-time
+              example:
+                status: not-ready
+                dependencies:
+                  database: disconnected
+                timestamp: "2024-01-20T12:00:00Z"
 
 components:
   securitySchemes:
@@ -286,7 +516,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: AWS Cognito OAuth 2.0 JWT token
+      description: AWS Cognito OAuth 2.0 JWT token. Optional for v1, may be required in future versions.
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for rate limiting and access control
 
   schemas:
     Product:
@@ -296,7 +531,10 @@ components:
         - name
         - description
         - price
-        - stock
+        - currency
+        - category
+        - inStock
+        - stockQuantity
         - createdAt
         - updatedAt
       properties:
@@ -307,28 +545,54 @@ components:
         name:
           type: string
           minLength: 1
-          maxLength: 255
+          maxLength: 200
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
         price:
           type: number
           format: double
           minimum: 0.01
           description: Product price (must be > 0)
-        stock:
-          type: integer
-          minimum: 0
-          description: Available stock quantity
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 currency code
+          default: USD
         category:
           type: string
+          enum:
+            - Electronics
+            - Clothing
+            - Home & Garden
+            - Sports & Outdoors
+            - Books & Media
+            - General
+          description: Product category
+          default: General
+        imageUrl:
+          type: string
+          format: uri
           nullable: true
+          description: URL to product image (null if no image available)
+        inStock:
+          type: boolean
+          description: "Computed field: true if stockQuantity > 0, false otherwise"
+        stockQuantity:
+          type: integer
+          minimum: 0
+          description: Current available stock quantity
         createdAt:
           type: string
           format: date-time
+          description: Timestamp when product was created (ISO 8601 format)
         updatedAt:
           type: string
           format: date-time
+          description: Timestamp when product was last updated (ISO 8601 format)
 
     ProductInput:
       type: object
@@ -336,25 +600,43 @@ components:
         - name
         - description
         - price
-        - stock
+        - stockQuantity
       properties:
         name:
           type: string
           minLength: 1
-          maxLength: 255
+          maxLength: 200
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
         price:
           type: number
           format: double
           minimum: 0.01
-        stock:
-          type: integer
-          minimum: 0
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: "^[A-Z]{3}$"
+          default: USD
         category:
           type: string
+          enum:
+            - Electronics
+            - Clothing
+            - Home & Garden
+            - Sports & Outdoors
+            - Books & Media
+            - General
+          default: General
+        imageUrl:
+          type: string
+          format: uri
           nullable: true
+        stockQuantity:
+          type: integer
+          minimum: 0
 
     ProductUpdate:
       type: object
@@ -362,24 +644,66 @@ components:
         name:
           type: string
           minLength: 1
-          maxLength: 255
+          maxLength: 200
         description:
           type: string
-          maxLength: 1000
+          minLength: 1
+          maxLength: 2000
         price:
           type: number
           format: double
           minimum: 0.01
-        stock:
-          type: integer
-          minimum: 0
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: "^[A-Z]{3}$"
         category:
           type: string
+          enum:
+            - Electronics
+            - Clothing
+            - Home & Garden
+            - Sports & Outdoors
+            - Books & Media
+            - General
+        imageUrl:
+          type: string
+          format: uri
           nullable: true
+        stockQuantity:
+          type: integer
+          minimum: 0
+
+    ProductListResponse:
+      type: object
+      required: [products, pagination]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+          description: Array of product objects
+        pagination:
+          type: object
+          required: [limit, hasMore]
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 100
+              description: Number of items per page
+            nextToken:
+              type: string
+              format: base64
+              description: Base64-encoded cursor token for fetching the next page. Present only if hasMore is true.
+            hasMore:
+              type: boolean
+              description: Indicates if more results are available
 
     ProblemDetails:
       type: object
-      description: RFC 7807 Problem Details for HTTP APIs
+      description: RFC 7807 Problem Details for HTTP APIs error format
       required:
         - type
         - title
@@ -390,20 +714,35 @@ components:
         type:
           type: string
           format: uri
-          description: URI reference identifying the problem type
+          description: URI reference that identifies the problem type
         title:
           type: string
-          description: Short, human-readable summary
+          description: Short, human-readable summary of the problem type
         status:
           type: integer
           description: HTTP status code
         detail:
           type: string
-          description: Human-readable explanation
+          description: Human-readable explanation specific to this occurrence of the problem
         instance:
           type: string
-          format: uri
-          description: URI reference identifying the specific occurrence
+          format: uri-reference
+          description: URI reference that identifies the specific occurrence of the problem
+        errors:
+          type: array
+          description: Optional array of validation errors (for multiple validation failures)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: Name of the field that failed validation
+              message:
+                type: string
+                description: Validation error message for this field
+              code:
+                type: string
+                description: Error code for programmatic handling
 
   responses:
     ValidationError:
@@ -412,12 +751,31 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
-          example:
-            type: https://api.shopcart.com/problems/validation-error
-            title: Validation Error
-            status: 400
-            detail: Price must be greater than 0
-            instance: /api/v1/products
+          examples:
+            invalidLimit:
+              summary: Invalid limit parameter
+              value:
+                type: https://api.shopcart.com/errors/invalid-parameter
+                title: Invalid Query Parameter
+                status: 400
+                detail: "The 'limit' parameter must be an integer between 1 and 100"
+                instance: /api/v1/products?limit=150
+            invalidCategory:
+              summary: Invalid category value
+              value:
+                type: https://api.shopcart.com/errors/invalid-parameter
+                title: Invalid Query Parameter
+                status: 400
+                detail: "The 'category' parameter must be one of: Electronics, Clothing, Home & Garden, Sports & Outdoors, Books & Media, General"
+                instance: /api/v1/products?category=InvalidCategory
+            invalidPriceRange:
+              summary: Invalid price range
+              value:
+                type: https://api.shopcart.com/errors/invalid-parameter
+                title: Invalid Query Parameter
+                status: 400
+                detail: "The 'minPrice' must be less than or equal to 'maxPrice'"
+                instance: /api/v1/products?minPrice=100&maxPrice=50
 
     Unauthorized:
       description: Unauthorized
@@ -426,7 +784,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: https://api.shopcart.com/problems/unauthorized
+            type: https://api.shopcart.com/errors/unauthorized
             title: Unauthorized
             status: 401
             detail: Authentication required
@@ -439,11 +797,11 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: https://api.shopcart.com/problems/not-found
+            type: https://api.shopcart.com/errors/not-found
             title: Resource Not Found
             status: 404
-            detail: Product with ID 123 does not exist
-            instance: /api/v1/products/123
+            detail: Product with ID 12345678-90ab-cdef-1234-567890abcdef does not exist
+            instance: /api/v1/products/12345678-90ab-cdef-1234-567890abcdef
 
     InsufficientStock:
       description: Insufficient stock
@@ -452,11 +810,45 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: https://api.shopcart.com/problems/insufficient-stock
+            type: https://api.shopcart.com/errors/insufficient-stock
             title: Insufficient Stock
             status: 409
-            detail: Insufficient stock for product 123
-            instance: /api/v1/products/123/decrement-stock
+            detail: Insufficient stock for product 12345678-90ab-cdef-1234-567890abcdef
+            instance: /api/v1/products/12345678-90ab-cdef-1234-567890abcdef/decrement-stock
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per time window
+          schema:
+            type: integer
+          example: 1000
+        X-RateLimit-Remaining:
+          description: Remaining requests in current time window
+          schema:
+            type: integer
+          example: 0
+        X-RateLimit-Reset:
+          description: Time when rate limit resets (Unix timestamp)
+          schema:
+            type: integer
+          example: 1705756800
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+          example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://api.shopcart.com/errors/rate-limit
+            title: Rate Limit Exceeded
+            status: 429
+            detail: API rate limit exceeded. Maximum 1000 requests per second allowed.
+            instance: /api/v1/products
 
     InternalServerError:
       description: Internal server error
@@ -465,8 +857,29 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: https://api.shopcart.com/problems/internal-error
+            type: https://api.shopcart.com/errors/internal
             title: Internal Server Error
             status: 500
-            detail: An unexpected error occurred
+            detail: An unexpected error occurred while processing your request. Please try again later.
             instance: /api/v1/products
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+          example: 300
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://api.shopcart.com/errors/service-unavailable
+            title: Service Unavailable
+            status: 503
+            detail: The service is temporarily unavailable due to maintenance or high load. Please try again later.
+            instance: /api/v1/products
+
+security: []
